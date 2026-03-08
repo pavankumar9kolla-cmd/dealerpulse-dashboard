@@ -50,6 +50,7 @@ export interface BranchPerformanceData {
 
 export interface RepPerformanceData {
   rep: string;
+  rep_id: string;
   revenue: number;
   orders: number;
   conversionRate: number;
@@ -63,6 +64,8 @@ export interface LeadAgingData {
 export interface PipelineForecastData {
   type: string;
   value: number;
+  conversionRate?: number;
+  pipelineRevenue?: number;
 }
 
 export interface Insight {

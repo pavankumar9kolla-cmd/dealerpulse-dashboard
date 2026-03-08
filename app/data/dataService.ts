@@ -118,6 +118,7 @@ export async function getRepPerformanceData(filters?: FilterOptions, limit: numb
 
     return {
       rep: rep.name,
+      rep_id: rep.id,
       revenue,
       orders,
       conversionRate

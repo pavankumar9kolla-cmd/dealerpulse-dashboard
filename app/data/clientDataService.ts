@@ -84,21 +84,26 @@ export async function getBranchPerformanceData(filters?: FilterOptions): Promise
   const leads = await getFilteredLeads(filters);
   const branches = await getBranches();
 
-  return branches.map(branch => {
-    const branchLeads = leads.filter(lead => lead.branch_id === branch.id);
-    const orders = branchLeads.filter(lead => lead.status === 'order_placed' || lead.status === 'delivered').length;
-    const revenue = branchLeads
-      .filter(lead => lead.status === 'delivered')
-      .reduce((sum, lead) => sum + lead.deal_value, 0);
-    const conversionRate = branchLeads.length > 0 ? (orders / branchLeads.length) * 100 : 0;
+  // Only include branches that have at least one lead in the filtered dataset
+  const activeBranchIds = new Set(leads.map(l => l.branch_id));
 
-    return {
-      branch: branch.name,
-      revenue,
-      orders,
-      conversionRate
-    };
-  });
+  return branches
+    .filter(branch => activeBranchIds.has(branch.id))
+    .map(branch => {
+      const branchLeads = leads.filter(lead => lead.branch_id === branch.id);
+      const orders = branchLeads.filter(lead => lead.status === 'order_placed' || lead.status === 'delivered').length;
+      const revenue = branchLeads
+        .filter(lead => lead.status === 'delivered')
+        .reduce((sum, lead) => sum + lead.deal_value, 0);
+      const conversionRate = branchLeads.length > 0 ? (orders / branchLeads.length) * 100 : 0;
+
+      return {
+        branch: branch.name,
+        revenue,
+        orders,
+        conversionRate
+      };
+    });
 }
 
 export async function getRepPerformanceData(filters?: FilterOptions, limit: number = 10): Promise<RepPerformanceData[]> {
@@ -115,6 +120,7 @@ export async function getRepPerformanceData(filters?: FilterOptions, limit: numb
 
     return {
       rep: rep.name,
+      rep_id: rep.id,
       revenue,
       orders,
       conversionRate
@@ -135,43 +141,53 @@ export async function getLeadAgingData(filters?: FilterOptions): Promise<LeadAgi
   const now = new Date();
 
   const agingCounts = {
-    '0-2 days': 0,
-    '3-5 days': 0,
-    '6+ days': 0
+    '0–2 days': 0,
+    '3–7 days': 0,
+    '8+ days':  0,
   };
 
   leads.forEach(lead => {
-    const lastActivity = new Date(lead.last_activity_at);
-    const daysDiff = Math.floor((now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
+    const created  = new Date(lead.created_at);
+    const daysDiff = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
 
     if (daysDiff <= 2) {
-      agingCounts['0-2 days']++;
-    } else if (daysDiff <= 5) {
-      agingCounts['3-5 days']++;
+      agingCounts['0–2 days']++;
+    } else if (daysDiff <= 7) {
+      agingCounts['3–7 days']++;
     } else {
-      agingCounts['6+ days']++;
+      agingCounts['8+ days']++;
     }
   });
 
-  return Object.entries(agingCounts).map(([range, count]) => ({ range, count }));
+  return [
+    { range: '0–2 days', count: agingCounts['0–2 days'] },
+    { range: '3–7 days', count: agingCounts['3–7 days'] },
+    { range: '8+ days',  count: agingCounts['8+ days']  },
+  ];
 }
 
 export async function getPipelineForecastData(filters?: FilterOptions): Promise<PipelineForecastData[]> {
   const leads = await getFilteredLeads(filters);
 
+  const totalLeads = leads.length;
+  const deliveredLeads = leads.filter(lead => lead.status === 'delivered').length;
+  const conversionRate = totalLeads > 0 ? deliveredLeads / totalLeads : 0;
+
   const currentRevenue = leads
     .filter(lead => lead.status === 'delivered')
     .reduce((sum, lead) => sum + lead.deal_value, 0);
 
-  // Simple forecast: assume 70% of pipeline converts
+  // Pipeline: active leads not yet delivered or lost
   const pipelineValue = leads
     .filter(lead => lead.status !== 'delivered' && lead.status !== 'lost')
     .reduce((sum, lead) => sum + lead.deal_value, 0);
 
-  const projectedRevenue = currentRevenue + (pipelineValue * 0.7);
+  // Projected Revenue = Current Revenue + (Pipeline Value × Conversion Rate)
+  const pipelineRevenue = pipelineValue * conversionRate;
+  const projectedRevenue = currentRevenue + pipelineRevenue;
 
   return [
     { type: 'Current Revenue', value: currentRevenue },
-    { type: 'Projected Revenue', value: projectedRevenue }
+    { type: 'Projected Revenue', value: projectedRevenue, conversionRate, pipelineRevenue }
   ];
 }
